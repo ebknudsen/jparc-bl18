@@ -38,10 +38,10 @@
 *
 **************************************************************************/
 DEFINE INSTRUMENT BL18_SENJU(L_min=0.4, L_max=4, NX=1, NY=1, NZ=1, XW=0.01, YH=0.01, ZD=0.01, 
-    string map_fn="default.map", string orts_fn="default.orts",string lau_fn="Fe.lau",
+        string map_fn="default.map", string orts_fn="default.orts",string lau_fn="reflections.xtal", string pow_fn="reflections.powder",
     AX = 2.886,AY = 0, AZ = 0.0, BX = 0.0, BY = 2.886, BZ = 0.0, CX = 0.0,CY = 0.0, CZ = 2.886,
-    omega=0, string samplename="C0127", int runnumber=0,
-    int side=0 
+    omega=0, sample_offset=0,
+    string samplename="C0127", int runnumber=0, int side=7
 )
 
 DECLARE
@@ -614,7 +614,7 @@ EXTEND
 %}
 
 COMPONENT sx_hull=Arm()
-AT(0,0,0) RELATIVE PREVIOUS
+AT(0,0,sample_offset) RELATIVE PREVIOUS
 ROTATED (0,omega,0) RELATIVE Origin
 EXTEND
 %{
@@ -707,7 +707,7 @@ COMPONENT SX = Single_crystal(
     zdepth = ZD/(double)NZ, delta_d_d = 0.01, mosaic = 0.01,barns=1,
     ax = AX, ay = AY, az = AZ, bx = BX, by = BY, bz = BZ, cx = CX,cy = CY, cz = CZ, 
     p_transmit = 0.1)
-WHEN (!sx_background) AT (0, 0, 0) RELATIVE sx_hull
+WHEN (!sx_background && oidx<1000) AT (0, 0, 0) RELATIVE sx_hull
 EXTEND
 %{
 #ifdef MCSTAS_DEBUG
@@ -732,8 +732,8 @@ EXTEND
 COMPONENT POWDX = PowderN(
         reflections = pow_fn,
         xwidth = XW/(double)NX, yheight = YH/(double)NY, zdepth = ZD/(double)NZ, 
-        pack=1, delta_d_d = 0.01, barns=1, p_interact = 0.1)
-WHEN (!sx_background && oidx>1000) AT (0,0,0) RELATIVE sx_hull
+        pack=1, delta_d_d = 0.01, barns=1, p_interact = 0.9)
+WHEN (!sx_background && oidx>=1000) AT (0,0,0) RELATIVE sx_hull
 EXTEND
 %{
   do {
