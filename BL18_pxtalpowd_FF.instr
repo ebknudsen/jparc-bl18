@@ -672,14 +672,17 @@ EXTEND
        * skipping the orientation search.*/
       /*orientation index is in the 4th column of map_table. -1 since array is zero-indexed.*/
       oidx=Table_Index(*map_table,ix*(ny*nz)+iy*nz+iz,3)-1;
-      double kix_carry=MC_GETPAR(SX,hkl_info).kix;
-      double kiy_carry=MC_GETPAR(SX,hkl_info).kiy;
-      double kiz_carry=MC_GETPAR(SX,hkl_info).kiz; 
-      MC_GETPAR(SX,hkl_info)=(poly_hkl_info[oidx]);
+      //double kix_carry=MC_GETPAR(SX,hkl_info).kix;
+      //double kiy_carry=MC_GETPAR(SX,hkl_info).kiy;
+      //double kiz_carry=MC_GETPAR(SX,hkl_info).kiz;
+      if(oidx<1000){
+          /*this only valid for single crystal voxels - not powder v's*/
+          MC_GETPAR(SX,hkl_info)=(poly_hkl_info[oidx]);
+      }
       //printf("%d %d %d ki= %g %g %g ki_carry= %g %g %g\n",ix,iy,iz,MC_GETPAR(SX,hkl_info).kix,MC_GETPAR(SX,hkl_info).kiy,MC_GETPAR(SX,hkl_info).kiz,kix_carry, kiy_carry,kiz_carry);
-      MC_GETPAR(SX,hkl_info).kix=kix_carry;
-      MC_GETPAR(SX,hkl_info).kiy=kiy_carry;
-      MC_GETPAR(SX,hkl_info).kiz=kiz_carry;
+      //MC_GETPAR(SX,hkl_info).kix=kix_carry;
+      //MC_GETPAR(SX,hkl_info).kiy=kiy_carry;
+      //MC_GETPAR(SX,hkl_info).kiz=kiz_carry;
 
       posx=(ix-nx*0.5+.5)*xw/nx;
       posy=(iy-ny*0.5+.5)*yh/ny;
