@@ -275,83 +275,64 @@ SAVE
   for (ll=0;ll<nt;ll++) {
       /*at time slice ll*/
 #ifdef USE_MPI
+      float *rbuf;
+      float *sbuf;
+      sbuf=calloc(sizeof(float),3*nx*ny);
+      rbuf=calloc(sizeof(float),3*nx*ny);
+      if(sbuf==NULL || rbuf == NULL){
+          fprintf(stderr,"Error allocating send/receive buffers\n");exit(-1);
+      }
+      if (PSD_p[ll]!=NULL){
+          for (kk=0;kk<nx*ny;kk++){
+              sbuf[kk]=PSD_p[ll][kk];
+              sbuf[kk+nx*ny]=PSD_p2[ll][kk];
+              sbuf[kk+2*nx*ny]=PSD_N[ll][kk];
+          }
+      }
+      MPI_Reduce(sbuf,rbuf,3*nx*ny,MPI_FLOAT,MPI_SUM,0,MPI_COMM_WORLD); 
+
       if(mpi_node_rank==0){
-          /*Check if this timeslice has been allocated at the mother node*/
-          if (PSD_p[ll]==NULL){
-              PSD_N[ll]=calloc(nx*ny,sizeof(*(PSD_N[0])));
-              PSD_p[ll]=calloc(nx*ny,sizeof(*(PSD_p[0])));
-              PSD_p2[ll]=calloc(nx*ny,sizeof(*(PSD_p2[0])));
-              if( PSD_p[ll] ==NULL || PSD_p2[ll]==NULL || PSD_N[ll]==NULL){
-                  fprintf(stderr,"Error (%s): Memory allocation error for gather operation.\n",NAME_CURRENT_COMP);
-                  exit(-1);
-              }
-          }
-          double time_slice_buffer[nx*ny];
-          
-          /*receive from all the other ranks*/
-          /*do a gather operation*/
-          int source_node=0;
-          for (source_node=1;source_node<mpi_node_count;source_node++){
-              unsigned long nn=0;
-              mc_MPI_Recv(&nn, 1, MPI_UNSIGNED_LONG, source_node);/*receive into buffer*/
-              if (nn){
-                  /*there's data to recieve*/;
-                  int status=mc_MPI_Recv(time_slice_buffer,nx*ny,MPI_DOUBLE,source_node);
-                  if (status != MPI_SUCCESS){
-                      printf("MPI not sucess\n");
-                      exit(-1);
-                  }
-                  /*add to assembled time_slice (i.e. do an MPI reduce)*/
-                  for (kk=0;kk<nx*ny;kk++){
-                      PSD_p[ll][kk]+=time_slice_buffer[kk];
-                  }
-              }
-/*              else{*/
-/*                  printf("no data from node %d ts %d\n",source_node,ll);*/
-/*              }*/
-          }
-          /*Now the gathered data for time slice ll is in the array PSD_p
-            Write it to a second buffer as either 64 bit doubles or 16 bit integers and push to disk*/
-      
           /*set buffer to zero*/
           memset(buffer,0,abs(buffer_itemsize)*nx*ny);
-          if(PSD_p[ll]!=NULL){
-              if (count_sampling){
-                  for (kk=0;kk<nx*ny;kk++){
-                      /*if there is something in this timeslice to write then convert to FITS format
-                       * otherwise skip and just write zeros*/
-                      /*convert to "real" counts*/
-                      double se=mcestimate_error(PSD_N[ll][kk],PSD_p[ll][kk],PSD_p2[ll][kk]);
-                      double estimate=randnorm()*se+(PSD_p[ll][kk]/PSD_N[ll][kk]);
-                      int16_t pixel; 
-                      pixel =(int16_t)floor(estimate>32767?32767:estimate);
-                      if (estimate>0) {
-                          //swap bytes
-                          *( (int16_t*) buffer + kk )=  (pixel <<8 )| (pixel >>8);
-                      }
-                      if (estimate > 32767 && !flag_overflow) {
-                          flag_overflow=1;
-                      }
+          if (count_sampling){
+              for (kk=0;kk<nx*ny;kk++){
+                  /*if there is something in this timeslice to write then convert to FITS format
+                   * otherwise skip and just write zeros*/
+                  /*convert to "real" counts*/
+                  double N,p,p2;
+                  p=rbuf[kk];
+                  p2=rbuf[kk+nx*ny];
+                  N=rbuf[kk+2*nx*ny];
+                  double se=mcestimate_error(N,p,p2);
+                  double estimate=randnorm()*se+(p/N);
+                  int16_t pixel; 
+                  pixel =(int16_t)floor(estimate>32767?32767:estimate);
+                  if (estimate>0) {
+                      //swap bytes
+                      *( (int16_t*) buffer + kk )=  (pixel <<8 )| (pixel >>8);
                   }
-              }else if (abs(buffer_itemsize)==4){
-                  /*convert to 32 bit floats*/
-                  float fm;
-                  for (kk=0;kk<nx*ny;kk++){
-                      if(PSD_p[ll][kk]<FLT_MAX){
-                          fm=(float) PSD_p[ll][kk];
-                      }else{
-                          fm=FLT_MAX;
-                          flag_overflow=1;
-                      }
-                      byteswap32(&fm,( (float *) buffer + kk)); 
-                      //*( (float*) buffer + kk) = byteswap32(&fm,NULL);
+                  if (estimate > 32767 && !flag_overflow) {
+                      flag_overflow=1;
                   }
-              }else{
-                  /*we just write the actual double here (should that be byteswapped as well?)*/
-                  for (kk=0;kk<nx*ny;kk++){
-                      *( (double*) buffer +kk) = (double) PSD_p[ll][kk];
+              }
+          }else if (abs(buffer_itemsize)==4){
+              /*convert to 32 bit floats*/
+              float fm;
+              for (kk=0;kk<nx*ny;kk++){
+                  if(rbuf[kk]<FLT_MAX){
+                      fm=(float) rbuf[kk];
+                  }else{
+                      fm=FLT_MAX;
+                      flag_overflow=1;
+                  }
+                  byteswap32(&fm,( (float *) buffer + kk)); 
+                  //*( (float*) buffer + kk) = byteswap32(&fm,NULL);
+              }
+          }else{
+              /*we just write the actual double here (should that be byteswapped as well?)*/
+              for (kk=0;kk<nx*ny;kk++){
+                  *( (double*) buffer +kk) = (double) rbuf[kk];
 
-                  }
               }
           }
           /*now write the buffer to disk*/
@@ -360,29 +341,9 @@ SAVE
               exit(errno);
           }
           bytes_written+=kk*abs(buffer_itemsize);
-      } else {
-          /*do this for non-mothers*/
-          unsigned long nn;
-          if (PSD_p[ll]==NULL){
-              nn=0;
-              mc_MPI_Send(&nn,1, MPI_UNSIGNED_LONG, 0);
-              //printf("node %d sending zeros for slice %d\n",mpi_node_rank,ll);
-              //mc_MPI_Send(zero_time_slice_buffer,nx*ny,MPI_DOUBLE,0);
-          }else{
-              nn=nx*ny;
-              double buffering[nx*ny];
-              int kk;
-              for (kk=0;kk<nx*ny;kk++){
-                  buffering[kk]=PSD_p[ll][kk];
-              } 
-              mc_MPI_Send(&nn,1, MPI_UNSIGNED_LONG, 0);
-              int status=mc_MPI_Send(buffering,nx*ny,MPI_DOUBLE,0);
-              if (status != MPI_SUCCESS){
-                  printf("MPI not sucess in node %d\n",mpi_node_rank);
-                  exit(-1);
-              }
-          }
       }
+      free(rbuf);
+      free(sbuf);
 #else
       /*set buffer to zero*/
       memset(buffer,0,abs(buffer_itemsize)*nx*ny);
