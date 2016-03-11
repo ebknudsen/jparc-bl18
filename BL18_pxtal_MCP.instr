@@ -980,7 +980,7 @@ AT (0,0,0) RELATIVE psdsamp
 /*AT(0,0,0.02) RELATIVE psdsamp  */
 /*GROUP mcp*/
 
-COMPONENT mon_MCP = FITS_monitor_new(
+COMPONENT mon_MCP = FITS_monitor(
         xwidth=0.028, yheight=0.028, filename="mon_MCP",short_floats=1,nx=258,ny=258,nt=2424,tmin=1, tmax=40000,restore_neutron=1,
         noextrafiles=0
 )

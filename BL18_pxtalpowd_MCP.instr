@@ -38,7 +38,7 @@
 *
 **************************************************************************/
 DEFINE INSTRUMENT BL18_SENJU(L_min=0.4, L_max=4, NX=1, NY=1, NZ=1, XW=0.01, YH=0.01, ZD=0.01, 
-    string map_fn="default.map", string orts_fn="default.orts",string lau_fn="Fe.lau",
+        string map_fn="default.map", string orts_fn="default.orts",string lau_fn="reflections.xtal",string pow_fn="reflections.powder",
     AX = 2.886,AY = 0, AZ = 0.0, BX = 0.0, BY = 2.886, BZ = 0.0, CX = 0.0,CY = 0.0, CZ = 2.886,
     omega=0, string samplename="C0127", int runnumber=0,
     int side=0 
@@ -668,19 +668,26 @@ EXTEND
 
       //SCATTER;
 
-      /*inject the right hkl_info struct and carry over the "old" neutron ki to allow
+      /*inject the right hkl_info struct. The old neutron ki gets carried over to allow
        * skipping the orientation search.*/
       /*orientation index is in the 4th column of map_table. -1 since array is zero-indexed.*/
+      
       oidx=Table_Index(*map_table,ix*(ny*nz)+iy*nz+iz,3)-1;
-      double kix_carry=MC_GETPAR(SX,hkl_info).kix;
-      double kiy_carry=MC_GETPAR(SX,hkl_info).kiy;
-      double kiz_carry=MC_GETPAR(SX,hkl_info).kiz; 
-      MC_GETPAR(SX,hkl_info)=(poly_hkl_info[oidx]);
-      //printf("%d %d %d ki= %g %g %g ki_carry= %g %g %g\n",ix,iy,iz,MC_GETPAR(SX,hkl_info).kix,MC_GETPAR(SX,hkl_info).kiy,MC_GETPAR(SX,hkl_info).kiz,kix_carry, kiy_carry,kiz_carry);
-      MC_GETPAR(SX,hkl_info).kix=kix_carry;
-      MC_GETPAR(SX,hkl_info).kiy=kiy_carry;
-      MC_GETPAR(SX,hkl_info).kiz=kiz_carry;
+/*      double kix_carry=MC_GETPAR(SX,hkl_info).kix;*/
+/*      double kiy_carry=MC_GETPAR(SX,hkl_info).kiy;*/
+/*      double kiz_carry=MC_GETPAR(SX,hkl_info).kiz; */
+      if(oidx<1000){
+          /*this only valid for single crystal voxels - not powder v's*/
+          MC_GETPAR(SX,hkl_info)=(poly_hkl_info[oidx]);
+      }
 
+      //printf("%d %d %d ki= %g %g %g ki_carry= %g %g %g\n",ix,iy,iz,MC_GETPAR(SX,hkl_info).kix,MC_GETPAR(SX,hkl_info).kiy,MC_GETPAR(SX,hkl_info).kiz,kix_carry, kiy_carry,kiz_carry);
+      /*if we have the same orientation as before, carry the ki over*/
+/*      if(oidx==preoidx){*/
+/*          MC_GETPAR(SX,hkl_info).kix=kix_carry;*/
+/*          MC_GETPAR(SX,hkl_info).kiy=kiy_carry;*/
+/*          MC_GETPAR(SX,hkl_info).kiz=kiz_carry;*/
+/*      }*/
       posx=(ix-nx*0.5+.5)*xw/nx;
       posy=(iy-ny*0.5+.5)*yh/ny;
       posz=(iz-nz*0.5+.5)*zd/nz;
@@ -704,10 +711,10 @@ JUMP sx_exit WHEN (crystal_miss)
 COMPONENT SX = Single_crystal(
     reflections = lau_fn, 
     xwidth = XW/(double)NX, yheight = YH/(double)NY,
-    zdepth = ZD/(double)NZ, delta_d_d = 0.01, mosaic = 0.01,sigma_inc=0.4,sigma_abs=2.56,barns=1,
+    zdepth = ZD/(double)NZ, delta_d_d = 0.001, mosaic = 0.001,sigma_inc=40,sigma_abs=256,barns=0,
     ax = AX, ay = AY, az = AZ, bx = BX, by = BY, bz = BZ, cx = CX,cy = CY, cz = CZ, 
     p_transmit = 0.9)
-WHEN (!sx_background) AT (0, 0, 0) RELATIVE sx_hull
+WHEN (!sx_background && oidx <1000) AT (0, 0, 0) RELATIVE sx_hull
 EXTEND
 %{
 #ifdef MCSTAS_DEBUG
@@ -717,6 +724,26 @@ EXTEND
     if (hkl_info.type='t'){
       //printf("COHSCATTORT: %d\n",oidx);
     }  
+    if(SCATTERED) xtals++;
+    int s;
+    double t0,t1;
+    if ( (s=box_intersect(&t0,&t1,x,y,z,vx,vy,vz,xwidth,yheight,zdepth) ) && t1>0 ){
+      PROP_DT(t1+DBL_EPSILON);
+    }
+    /*transform back to regular coordinates*/
+    x+=posx;y+=posy;z+=posz;
+    SCATTER;
+  }while(0);
+%}
+
+COMPONENT POWDX = PowderN(
+        reflections = pow_fn,
+        xwidth = XW/(double)NX, yheight = YH/(double)NY, zdepth = ZD/(double)NZ, 
+        pack=1, delta_d_d = 0.01, barns=1, p_interact = 0.9)
+WHEN (!sx_background && oidx>=1000) AT (0,0,0) RELATIVE sx_hull
+EXTEND
+%{
+  do {
     if(SCATTERED) xtals++;
     int s;
     double t0,t1;
@@ -785,7 +812,7 @@ EXTEND
 /* far field detectors. u = up, d = down */
 /****************/
 
-%include "detector_arms.instr"
+/*%include "detector_arms.instr"*/
 
 /* Here's the 4pi detector*/
 
@@ -801,66 +828,66 @@ AT (0,0,0) RELATIVE psdsamp
 /*AT (0,0,0) RELATIVE det_014a*/
 /*GROUP det*/
 
-COMPONENT det_014 = HDB_monitor(
-        xwidth=0.256, yheight=0.256, filename=det_fn_014, noextrafiles=0)
-WHEN (side & 1) AT(0,0,0) RELATIVE det_014a
-GROUP det
-
-COMPONENT det_015 = COPY(det_014)(filename=det_fn_015)
-WHEN (side & 1) AT (0,0,0) RELATIVE det_015a
-GROUP det
-
-COMPONENT det_013 = COPY(det_014)(filename=det_fn_013)
-WHEN (side & 1) AT (0,0,0) RELATIVE det_013a
-GROUP det
-
-COMPONENT det_011 = COPY(det_014)(filename=det_fn_011)
-WHEN (side & 1) AT (0,0,0) RELATIVE det_011a
-GROUP det
-
-COMPONENT det_012 = COPY(det_014)(filename=det_fn_012)
-WHEN (side & 1) AT (0,0,0) RELATIVE det_012a
-GROUP det
-
-COMPONENT det_010 = COPY(det_014)(filename=det_fn_010)
-WHEN (side & 1) AT (0,0,0) RELATIVE det_010a
-GROUP det
-
-COMPONENT det_008 = COPY(det_014)(filename=det_fn_008)
-WHEN (side & 1) AT (0,0,0) RELATIVE det_008a
-GROUP det
-
-COMPONENT det_009 = COPY(det_014)(filename=det_fn_009)
-WHEN (side & 1) AT (0,0,0) RELATIVE det_009a
-GROUP det
-
-COMPONENT det_007 = COPY(det_014)(filename=det_fn_007)
-WHEN (side & 1) AT (0,0,0) RELATIVE det_007a
-GROUP det
-
-COMPONENT det_005 = COPY(det_014)(filename=det_fn_005)
-WHEN (side & 1) AT (0,0,0) RELATIVE det_005a
-GROUP det
-
-COMPONENT det_006 = COPY(det_014)(filename=det_fn_006)
-WHEN (side & 1) AT (0,0,0) RELATIVE det_006a
-GROUP det
-
-COMPONENT det_004 = COPY(det_014)(filename=det_fn_004)
-WHEN (side & 1) AT (0,0,0) RELATIVE det_004a
-GROUP det
-
-COMPONENT det_002 = COPY(det_014)(filename=det_fn_002)
-WHEN (side & 1) AT (0,0,0) RELATIVE det_002a
-GROUP det
-
-COMPONENT det_003 = COPY(det_014)(filename=det_fn_003)
-WHEN (side & 1) AT (0,0,0) RELATIVE det_003a
-GROUP det
-
-COMPONENT det_001 = COPY(det_014)(filename=det_fn_001)
-WHEN (side & 1) AT (0,0,0) RELATIVE det_001a
-GROUP det
+/*COMPONENT det_014 = HDB_monitor(*/
+/*        xwidth=0.256, yheight=0.256, filename=det_fn_014, noextrafiles=0)*/
+/*WHEN (side & 1) AT(0,0,0) RELATIVE det_014a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_015 = COPY(det_014)(filename=det_fn_015)*/
+/*WHEN (side & 1) AT (0,0,0) RELATIVE det_015a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_013 = COPY(det_014)(filename=det_fn_013)*/
+/*WHEN (side & 1) AT (0,0,0) RELATIVE det_013a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_011 = COPY(det_014)(filename=det_fn_011)*/
+/*WHEN (side & 1) AT (0,0,0) RELATIVE det_011a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_012 = COPY(det_014)(filename=det_fn_012)*/
+/*WHEN (side & 1) AT (0,0,0) RELATIVE det_012a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_010 = COPY(det_014)(filename=det_fn_010)*/
+/*WHEN (side & 1) AT (0,0,0) RELATIVE det_010a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_008 = COPY(det_014)(filename=det_fn_008)*/
+/*WHEN (side & 1) AT (0,0,0) RELATIVE det_008a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_009 = COPY(det_014)(filename=det_fn_009)*/
+/*WHEN (side & 1) AT (0,0,0) RELATIVE det_009a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_007 = COPY(det_014)(filename=det_fn_007)*/
+/*WHEN (side & 1) AT (0,0,0) RELATIVE det_007a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_005 = COPY(det_014)(filename=det_fn_005)*/
+/*WHEN (side & 1) AT (0,0,0) RELATIVE det_005a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_006 = COPY(det_014)(filename=det_fn_006)*/
+/*WHEN (side & 1) AT (0,0,0) RELATIVE det_006a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_004 = COPY(det_014)(filename=det_fn_004)*/
+/*WHEN (side & 1) AT (0,0,0) RELATIVE det_004a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_002 = COPY(det_014)(filename=det_fn_002)*/
+/*WHEN (side & 1) AT (0,0,0) RELATIVE det_002a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_003 = COPY(det_014)(filename=det_fn_003)*/
+/*WHEN (side & 1) AT (0,0,0) RELATIVE det_003a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_001 = COPY(det_014)(filename=det_fn_001)*/
+/*WHEN (side & 1) AT (0,0,0) RELATIVE det_001a*/
+/*GROUP det*/
 
 
 /* N monitors */
@@ -872,102 +899,102 @@ GROUP det
 /*WHEN (side & 2) AT (0,0,0) RELATIVE det_017a*/
 /*GROUP det*/
 
-COMPONENT det_017 = HDB_monitor(
-        xwidth=0.256, yheight=0.256, filename=det_fn_017, noextrafiles=0)
-WHEN (side & 2) AT(0,0,0) RELATIVE det_017a
-GROUP det
-
-COMPONENT det_018 = COPY(det_017)(filename=det_fn_018)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_018a
-GROUP det
-
-COMPONENT det_016 = COPY(det_017)(filename=det_fn_016)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_016a
-GROUP det
-
-COMPONENT det_020 = COPY(det_017)(filename=det_fn_020)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_020a
-GROUP det
-
-COMPONENT det_021 = COPY(det_017)(filename=det_fn_021)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_021a
-GROUP det
-
-COMPONENT det_019 = COPY(det_017)(filename=det_fn_019)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_019a
-GROUP det
-
-COMPONENT det_023 = COPY(det_017)(filename=det_fn_023)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_023a
-GROUP det
-
-COMPONENT det_024 = COPY(det_017)(filename=det_fn_024)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_024a
-GROUP det
-
-COMPONENT det_022 = COPY(det_017)(filename=det_fn_022)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_022a
-GROUP det
-
-COMPONENT det_026 = COPY(det_017)(filename=det_fn_026)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_026a
-GROUP det
-
-COMPONENT det_027 = COPY(det_017)(filename=det_fn_027)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_027a
-GROUP det
-
-COMPONENT det_025 = COPY(det_017)(filename=det_fn_025)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_025a
-GROUP det
-
-COMPONENT det_029 = COPY(det_017)(filename=det_fn_029)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_029a
-GROUP det
-
-COMPONENT det_030 = COPY(det_017)(filename=det_fn_030)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_030a
-GROUP det
-
-COMPONENT det_028 = COPY(det_017)(filename=det_fn_028)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_028a
-GROUP det
-
-COMPONENT det_032 = COPY(det_017)(filename=det_fn_032)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_032a
-GROUP det
-
-COMPONENT det_033 = COPY(det_017)(filename=det_fn_033)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_033a
-GROUP det
-
-COMPONENT det_031 = COPY(det_017)(filename=det_fn_031)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_031a
-GROUP det
-
-COMPONENT det_035 = COPY(det_017)(filename=det_fn_035)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_035a
-GROUP det
-
-COMPONENT det_036 = COPY(det_017)(filename=det_fn_036)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_036a
-GROUP det
-
-COMPONENT det_034 = COPY(det_017)(filename=det_fn_034)
-WHEN (side & 2) AT (0,0,0) RELATIVE det_034a
-GROUP det
-
-COMPONENT det_037 = COPY(det_014)(filename=det_fn_037)
-WHEN (side & 2) AT(0,0,0) RELATIVE det_037a
-GROUP det
-
-COMPONENT catch_all = Arm()
-AT(0,0,0) RELATIVE PREVIOUS
-GROUP det
-EXTEND
-%{
-  SCATTER;
-%}
+/*COMPONENT det_017 = HDB_monitor(*/
+/*        xwidth=0.256, yheight=0.256, filename=det_fn_017, noextrafiles=0)*/
+/*WHEN (side & 2) AT(0,0,0) RELATIVE det_017a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_018 = COPY(det_017)(filename=det_fn_018)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_018a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_016 = COPY(det_017)(filename=det_fn_016)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_016a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_020 = COPY(det_017)(filename=det_fn_020)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_020a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_021 = COPY(det_017)(filename=det_fn_021)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_021a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_019 = COPY(det_017)(filename=det_fn_019)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_019a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_023 = COPY(det_017)(filename=det_fn_023)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_023a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_024 = COPY(det_017)(filename=det_fn_024)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_024a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_022 = COPY(det_017)(filename=det_fn_022)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_022a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_026 = COPY(det_017)(filename=det_fn_026)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_026a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_027 = COPY(det_017)(filename=det_fn_027)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_027a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_025 = COPY(det_017)(filename=det_fn_025)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_025a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_029 = COPY(det_017)(filename=det_fn_029)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_029a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_030 = COPY(det_017)(filename=det_fn_030)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_030a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_028 = COPY(det_017)(filename=det_fn_028)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_028a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_032 = COPY(det_017)(filename=det_fn_032)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_032a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_033 = COPY(det_017)(filename=det_fn_033)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_033a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_031 = COPY(det_017)(filename=det_fn_031)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_031a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_035 = COPY(det_017)(filename=det_fn_035)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_035a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_036 = COPY(det_017)(filename=det_fn_036)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_036a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_034 = COPY(det_017)(filename=det_fn_034)*/
+/*WHEN (side & 2) AT (0,0,0) RELATIVE det_034a*/
+/*GROUP det*/
+/**/
+/*COMPONENT det_037 = COPY(det_014)(filename=det_fn_037)*/
+/*WHEN (side & 2) AT(0,0,0) RELATIVE det_037a*/
+/*GROUP det*/
+/**/
+/*COMPONENT catch_all = Arm()*/
+/*AT(0,0,0) RELATIVE PREVIOUS*/
+/*GROUP det*/
+/*EXTEND*/
+/*%{*/
+/*  SCATTER;*/
+/*%}*/
 
 /*Anton's detector has to come after the others - there's still an implicit ABSORB for unGROUPed monitors here*/
 /*COMPONENT mon_MCP = Monitor_nD(*/
@@ -977,7 +1004,8 @@ EXTEND
 /*GROUP mcp*/
 
 COMPONENT mon_MCP = FITS_monitor(
-        xwidth=0.028, yheight=0.028, filename="mon_MCP",short_floats=1,nx=258,ny=258,nt=400,tmin=1, tmax=40000,restore_neutron=1
+        xwidth=0.028, yheight=0.028, filename="mon_MCP",short_floats=1,nx=258,ny=258,nt=2424,tmin=1, tmax=40000,restore_neutron=1,
+        noextrafiles=0
 )
 WHEN (side & 4) AT(0,0,0.02) RELATIVE psdsamp
 GROUP mcp
@@ -988,7 +1016,7 @@ GROUP mcp
 /*GROUP mcp*/
 
 COMPONENT mon_MCP_not = Monitor_nD(
-    radius=0.025, filename="mon_MCP_not", options="t bins=400 limits=[1e-6 40000e-6]", restore_neutron=1)
+    radius=0.025, filename="mon_MCP_not", options="t bins=2424 limits=[1e-6 40000e-6]", restore_neutron=1)
 AT(0,0,0) RELATIVE psdsamp
 GROUP mcp
 

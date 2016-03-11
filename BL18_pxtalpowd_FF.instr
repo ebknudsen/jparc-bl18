@@ -824,7 +824,7 @@ AT (0,0,0) RELATIVE psdsamp
 /*AT (0,0,0) RELATIVE det_014a*/
 /*GROUP det*/
 
-COMPONENT det_014 = HDB_monitor_new(
+COMPONENT det_014 = HDB_monitor(
         xwidth=0.256, yheight=0.256, filename=det_fn_014, noextrafiles=0)
 WHEN (side & 1) AT(0,0,0) RELATIVE det_014a
 GROUP det
@@ -895,7 +895,7 @@ GROUP det
 /*WHEN (side & 2) AT (0,0,0) RELATIVE det_017a*/
 /*GROUP det*/
 
-COMPONENT det_017 = HDB_monitor_new(
+COMPONENT det_017 = HDB_monitor(
         xwidth=0.256, yheight=0.256, filename=det_fn_017, noextrafiles=0)
 WHEN (side & 2) AT(0,0,0) RELATIVE det_017a
 GROUP det
@@ -999,7 +999,7 @@ EXTEND
 /*AT(0,0,0.02) RELATIVE psdsamp  */
 /*GROUP mcp*/
 
-/*COMPONENT mon_MCP = FITS_monitor_new(*/
+/*COMPONENT mon_MCP = FITS_monitor(*/
 /*        noextrafiles=1,xwidth=0.028, yheight=0.028, filename="mon_MCP",short_floats=1,nx=258,ny=258,nt=400,tmin=1, tmax=40000,restore_neutron=1*/
 /*)*/
 /*WHEN (side & 4) AT(0,0,0.02) RELATIVE psdsamp*/
