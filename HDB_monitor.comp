@@ -52,8 +52,8 @@
 
 
 DEFINE COMPONENT HDB_monitor
-  DEFINITION PARAMETERS (noextrafiles=1,nx=64, ny=64, nt=2000, string filename, restore_neutron=0)
-  SETTING PARAMETERS (xmin=0, xmax=0, ymin=0, ymax=0, xwidth=.256, yheight=.256, tmin=0, tmax=40000, count_time=1)
+DEFINITION PARAMETERS (noextrafiles=1,nx=64, ny=64, nt=2000, string filename, restore_neutron=0)
+SETTING PARAMETERS (xmin=0, xmax=0, ymin=0, ymax=0, xwidth=.256, yheight=.256, tmin=0, tmax=40000, count_time=1)
 OUTPUT PARAMETERS (PSD_N, PSD_p, PSD_p2, PSD_Ns, PSD_ps, PSD_p2s, TOF_Ns, TOF_ps, TOF_p2s)
 //STATE PARAMETERS (x,y,z,vx,vy,vz,t,s1,s2,p)
 //POLARISATION PARAMETERS (sx,sy,sz)
@@ -196,92 +196,45 @@ SAVE
   for (ii=0;ii<ny;ii++){
     for (jj=0;jj<nx;jj++){
 #ifdef USE_MPI
-      if(mpi_node_rank==0){
-        /*zero writing buffer*/
-        double write_buffer[nt];
-        memset(write_buffer,0,sizeof(write_buffer[0])*nt);
-        if(PSD_N[ii][jj]!=NULL){
-            for (kk=0;kk<nt;kk++){
+        double send_buffer[nt];
+        double recv_buffer[nt];
+        for (kk=0;kk<nt;kk++){
+            if(PSD_N[ii][jj]!=NULL){
                 //PSD_N[ii][jj]=calloc(nt,sizeof(*(PSD_N[0][0])));
                 //PSD_p[ii][jj]=calloc(nt,sizeof(*(PSD_p[0][0])));
                 //PSD_p2[ii][jj]=calloc(nt,sizeof(*(PSD_p2[0][0])));
+                send_buffer[kk]=(double) PSD_p[ii][jj][kk];
+            }else{
+                send_buffer[kk]=0;
+            }
+        }
+        MPI_Reduce(send_buffer,recv_buffer,nt,MPI_DOUBLE,MPI_SUM,0,MPI_COMM_WORLD);
+        if (mpi_node_rank==0){
+            if( (kk=fwrite(recv_buffer,64/8,nt,fp))!=nt){
+                fprintf(stderr,"Error (%s): Data not written to file \'%s\' cleanly. Errno=%d, bytes written: %d\n",NAME_CURRENT_COMP,ff,errno,kk);
+                exit(errno);
+            }
+        }
+#else
+        double write_buffer[nt];
+        if(PSD_p[ii][jj]==NULL){
+            memset(write_buffer,0,sizeof(*write_buffer)*nt);
+        }else{
+            for (kk=0;kk<nt;kk++){
                 write_buffer[kk]=(double) PSD_p[ii][jj][kk];
             }
         }
-        /*loop over other buffers*/
-        int source_node=0;
-        for (source_node=1;source_node<mpi_node_count;source_node++){
-          sleep(source_node*10);
-          unsigned long nn;
-          int status;
-          mc_MPI_Recv(&nn, 1, MPI_UNSIGNED_LONG, source_node);
-          if(nn){
-              /*there is data to recieve from node source_node*/
-              /*receive into buffer*/
-              status=mc_MPI_Recv(recv_buffer,nt,MPI_FLOAT,source_node);
-              if (status != MPI_SUCCESS){
-                  printf("Error(%s): MPI recv not sucess in node %d\n",NAME_CURRENT_COMP,mpi_node_rank);
-                  exit(-1);
-              }
-              /*add to real array*/
-              for (kk=0;kk<nt;kk++){
-                  write_buffer[kk]+=(double) recv_buffer[kk];
-              }
-          }else{
-          }
+        if( (kk=fwrite(write_buffer,sizeof(*write_buffer),nt,fp))!=nt){
+            fprintf(stderr,"Error (%s): Data not written to file \'%s\' cleanly. Errno=%d, bytes written: %d\n",NAME_CURRENT_COMP,ff,errno,kk);
+            exit(errno);
         }
-        /*end lloop*/
-        /*write the pixel to disk*/
-        
-        if( (kk=fwrite(write_buffer,64/8,nt,fp))!=nt){
-          fprintf(stderr,"Error (%s): Data not written to file \'%s\' cleanly. Errno=%d, bytes written: %d\n",NAME_CURRENT_COMP,ff,errno,kk);
-          exit(errno);
-        }
-      }else{
-          /*not the mother node*/
-          /*what would happen if you send a NULL?*/
-          sleep(mpi_node_rank*10);
-          unsigned long nn;
-          float send_buffer[nt];
-          int status;
-          if(PSD_p[ii][jj]!=NULL){
-            /*first send the number of data to receieve*/
-            nn=nt;
-            mc_MPI_Send(&nn,1, MPI_UNSIGNED_LONG, 0);
-            memcpy(send_buffer,PSD_p[ii][jj],sizeof(*(PSD_p[0][0]))*nt);
-            status=mc_MPI_Send(send_buffer,nt,MPI_FLOAT,0);
-            if (status != MPI_SUCCESS){
-                printf("Error(%s): MPI not sucess in node %d\n",NAME_CURRENT_COMP,mpi_node_rank);
-                exit(-1);
-            }
-          }else{
-            nn=0;
-            /*no data to send so don't send any but send a 0 to mark this*/
-            mc_MPI_Send(&nn, 1, MPI_UNSIGNED_LONG, 0);
-            //memset(buffer,0,sizeof(*(PSD_p[0][0]))*nt);    
-            //mc_MPI_Send(buffer,nt,MPI_FLOAT,0);
-        }
-      }
-#else
-      double write_buffer[nt];
-      if(PSD_p[ii][jj]==NULL){
-          memset(write_buffer,0,sizeof(*write_buffer)*nt);
-      }else{
-          for (kk=0;kk<nt;kk++){
-              write_buffer[kk]=(double) PSD_p[ii][jj][kk];
-          }
-      }
-      if( (kk=fwrite(write_buffer,sizeof(*write_buffer),nt,fp))!=nt){
-        fprintf(stderr,"Error (%s): Data not written to file \'%s\' cleanly. Errno=%d, bytes written: %d\n",NAME_CURRENT_COMP,ff,errno,kk);
-        exit(errno);
-      }
 #endif
-      /*free the memory*/
-      if(PSD_p[ii][jj]!=NULL){
-          free(PSD_N[ii][jj]);
-          free(PSD_p[ii][jj]);
-          free(PSD_p2[ii][jj]);
-      }
+        /*free the memory*/
+        if(PSD_p[ii][jj]!=NULL){
+            free(PSD_N[ii][jj]);
+            free(PSD_p[ii][jj]);
+            free(PSD_p2[ii][jj]);
+        }
     }
   }
   
