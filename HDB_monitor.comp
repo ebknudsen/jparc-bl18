@@ -14,23 +14,20 @@
 * Origin: Rose-liner bus
 * Release: McStas 2.1
 *
-* Position and TOF-sensitive monitor outputting a single hdb-file (as at J-PARC).
+* Position and TOF-sensitive monitor output as a single hdb-file (as at J-PARC).
 *
 * %D
-* A  (nx times nybins times nt) pixel PSD_TOF monitor. 
+* A  (nx times nybins times nt) pixel PSD_TOF monitor. The component can operate in two modes:
+* 1. Mimic the behvaiour of the detector banks on BL18 (SENJU), where data is stored in histograms files
+* called hdb files.
+* 2. A PSD TOF monitor combination.
+* The modes are controlled by the definition parameters nohdbfiles and noextrafiles.
 *
-* Will output a single HDB-file (as at BL-18 at J-PARC).
-*
-* Example: HDB_monitor(xmin=-0.1, xmax=0.1, ymin=-0.1, ymax=0.1,
-            nx=90, nybins=90, tmin=4000, tmax=7000, nt=3, filename="Output")
+* Example: HDB_monitor(xwidth=.256, yheight=0.256, nx=90, ny=90, tmin=4000, tmax=7000, nt=3, filename="Output")
 *
 * %P
 * INPUT PARAMETERS:
 *
-* xmin:     Lower x bound of detector opening (m)
-* xmax:     Upper x bound of detector opening (m)
-* ymin:     Lower y bound of detector opening (m)
-* ymax:     Upper y bound of detector opening (m)
 * tmin:     Lower time bound (mu-s)
 * tmax:     Upper time bound (mu-s)
 * xwidth:   Width/diameter of detector (x). Overrides xmin,xmax. (m)
@@ -40,6 +37,9 @@
 * nt:       Number of TOF bins (1)
 * filename: Name of file in which to store the detector image (text)
 * restore_neutron: If set, the monitor does not influence the neutron state (1)
+* noextrafiles: [ ] If set don't generate extra detector files with time- and space-integrated intensity.
+* nohbdfiles: [ ] If non-zero do not generate HDB-files. (I.e. makes the monitor act as a PSD and TOF monitor combination.
+*
 *
 * OUTPUT PARAMETERS:
 *
@@ -52,14 +52,13 @@
 
 
 DEFINE COMPONENT HDB_monitor
-DEFINITION PARAMETERS (noextrafiles=1,nx=64, ny=64, nt=2000, string filename, restore_neutron=0)
-SETTING PARAMETERS (xmin=0, xmax=0, ymin=0, ymax=0, xwidth=.256, yheight=.256, tmin=0, tmax=40000, count_time=1)
-OUTPUT PARAMETERS (PSD_N, PSD_p, PSD_p2, PSD_Ns, PSD_ps, PSD_p2s, TOF_Ns, TOF_ps, TOF_p2s)
-//STATE PARAMETERS (x,y,z,vx,vy,vz,t,s1,s2,p)
-//POLARISATION PARAMETERS (sx,sy,sz)
+DEFINITION PARAMETERS (noextrafiles=1,nohdbfiles=1,nx=64, ny=64, nt=2000, string filename, restore_neutron=0)
+SETTING PARAMETERS (xwidth=.256, yheight=.256, tmin=0, tmax=40000, count_time=1)
+OUTPUT PARAMETERS (xmin,xmax, ymax,ymin,PSD_N, PSD_p, PSD_p2, PSD_Ns, PSD_ps, PSD_p2s, TOF_Ns, TOF_ps, TOF_p2s)
 
 DECLARE
-  %{
+%{
+    double xmin,xmax,ymin,ymax;
     float *PSD_N[ny][nx];
     float *PSD_p[ny][nx];
     float *PSD_p2[ny][nx];
@@ -103,11 +102,13 @@ INITIALIZE
 	PSD_ps[i][j] = 0;
 	PSD_p2s[i][j] = 0;
 #endif
+#if !nohdbfiles
 	for (k=0; k<nt; k++) {
 	  PSD_N[j][i] = NULL;
 	  PSD_p[j][i] = NULL;
 	  PSD_p2[j][i] = NULL;
 	}
+#endif
       }
     %}
 TRACE
@@ -127,6 +128,7 @@ TRACE
       }
       //kl= k>>8;
       //km= k & ~0xFFFF;
+#if !hdbfiles
       if (PSD_N[j][i]==NULL){
         /*if (PSD[j][i][kl][km]==NULL)
          * Could do a kind of hash-table -here instead. Allocate for say nt>>8 (nt/128) buckets
@@ -143,6 +145,7 @@ TRACE
       PSD_p[j][i][k] += (float) p;
       PSD_p2[j][i][k] += (float) p*p;
 
+#endif
 #if !noextrafiles
       PSD_Ns[i][j]++;
       PSD_ps[i][j]+=p;
@@ -168,7 +171,7 @@ SAVE
   FILE *fp;
   float buffer[nt];
   float recv_buffer[nt];
-  
+#if !hdbfiles  
   /* open file*/
   /* write header to file*/
   if(mcdirname!=NULL && strlen(mcdirname)>0)  
@@ -247,6 +250,8 @@ SAVE
   fclose(fp);
 #endif
 
+#endif
+
   /* Make two regular McStas monitors (integrated over time and XY, respectively as well.
    * It is nice to have something quick on screen*/
 #if !noextrafiles
@@ -275,7 +280,7 @@ MCDISPLAY
 %{
   magnify("xy");
   multiline(5, (double)xmin, (double)ymin, 0.0,
-               (double)xmax, (double)ymin, 0.0,
+          (double)xmax, (double)ymin, 0.0,
                (double)xmax, (double)ymax, 0.0,
                (double)xmin, (double)ymax, 0.0,
                (double)xmin, (double)ymin, 0.0);
