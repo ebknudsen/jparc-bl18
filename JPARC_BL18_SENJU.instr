@@ -37,7 +37,9 @@
 * runnumber: [ ] runnumber to produce SENJU style filenames for .hdb files.
 * NOSE: [ ] Use the collimating Nose? Non zero means use.
 * GUARD: [ ] Add guard slit in front of sample. Non-zero means use.
-* MIRROR: [ ] Which of the interchangeable mirror to use? 0) no mirror, 1) mirror at 
+* MIRROR: [ ] Insert the focusing guide at the end of the main guide. Non-zero means yes.
+* CH1p: [ ] Phase of disk chopper 1.
+* Ch2p: [ ]
 *
 * These are some lines from the original J-parc simulation
 *	E_min=81.8049/lmax/lmax;
@@ -48,8 +50,9 @@
 *	E_max=81.8049*(252.778*35.6/tof_min)*(252.778*35.6/tof_min);
 *
 **************************************************************************/
-DEFINE INSTRUMENT JPARC_BL18_SENJU(L_min=0.4, L_max=4, E_min=0, E_max=0, TTT=0, delt=0, NOSE=0, GUARD=0,MIRROR=0,
-        XW=0.01, YH=0.01, ZD=0.01, string lau_fn="Fe.lau",
+DEFINE INSTRUMENT JPARC_BL18_SENJU(L_min=0.4, L_max=4, E_min=0, E_max=0, TTT=0,
+    delt=0, NOSE=0, GUARD=0,MIRROR=0,DC1p=32.5, DC2p=48.6,
+    XW=0.01, YH=0.01, ZD=0.01, string lau_fn="Fe.lau",
     AX = 2.886,AY = 0, AZ = 0.0, BX = 0.0, BY = 2.886, BZ = 0.0, CX = 0.0,CY = 0.0, CZ = 2.886,
     omega=0, string samplename="C0127", int runnumber=0)
 
@@ -66,6 +69,7 @@ DECLARE
     
   int anton;
   int oidx;
+  double r;
 
   /*The lines below have been added to deal with the polycrystalline sample*/
   %include "read_table-lib.h"
@@ -133,11 +137,8 @@ INITIALIZE
 
 TRACE
 
-COMPONENT Origin = Progress_bar()
+COMPONENT a1 = Progress_bar()
 AT (0,0,0) ABSOLUTE
-
-COMPONENT a1 = Arm()
-  AT (0,0,0) ABSOLUTE
 
 COMPONENT mod = SNS_source(
   filename="source_BL18.txt",
@@ -145,13 +146,13 @@ COMPONENT mod = SNS_source(
   dist = 15.19,
   focus_xw = 0.041, focus_yh = 0.041, 
   Emax=pow((2*M_PI/L_min)*K2V,2.0)*VS2E, Emin=pow((2*M_PI/L_max)*K2V,2.0)*VS2E      //lambda in Å; E probably in meV
-) AT (0,0,0) RELATIVE a1
+)WHEN(r<0.5) AT (0,0,0) RELATIVE a1
 
-/*Uncomment the section below if you want a pencil beam*/
+/*Old analytical model*/
 /*
 COMPONENT mod=Modr_dcHPb_flux(
-	xws=0.1, yhs=0.1, angle=0.0,
-	Emin=E_min, Emax=E_max,
+  xws=0.1, yhs=0.1, angle=0.0,
+  Emin=E_min, Emax=E_max,
   dist = 15.19,
   xw = 0.041, yh = 0.041
 ) AT (0,0,0)  RELATIVE a1
@@ -160,6 +161,29 @@ COMPONENT mod=Modr_dcHPb_flux(
 COMPONENT slt_in = Slit(
 	xwidth = 0.070, yheight = 0.070)
 	AT (0, 0, 2.271) RELATIVE a1
+
+/* DC1p=35.9 for 1st frame 25Hz omega = 157.0796 */
+/* DC1p=108.00 for 2nd frame 25Hz omega = 157.0796 */
+/* DC1p=35.9 for 1st frame 12.5Hz omega = 78.5398 */
+
+COMPONENT DC1 = DiskChopper(
+        theta_0=77.6, radius = 0.35, yheight = 0.1, nu = 157.0796/(2*M_PI), nslit=1, phase=DC1p,
+        jitter=0.00000)
+AT (0, 0, 7.2) RELATIVE a1 ROTATED (0, 0, 0) RELATIVE a1
+
+/****************************************************/
+
+/* DC2p=48.6 for 1st frame 25Hz omega = 157.0796 */
+/* DC2p=146.2 for 2nd frame 25Hz omega = 157.0796 */
+/* DC2p=48.6 for 1st frame 12.5Hz omega = 78.5398 */
+
+COMPONENT DC2 = DiskChopper(
+        theta_0=97.2, radius = 0.35, yheight = 0.1, nu = 157.0796/(2*M_PI), nslit=1, phase=DC2p,
+        jitter=0.00000)
+AT (0, 0, 9.750) RELATIVE a1 ROTATED (0, 0, 0) RELATIVE a1
+
+/****************************************************/
+
 
 COMPONENT slt_out = Slit(
 	xwidth = 0.044, yheight = 0.044)
@@ -474,7 +498,7 @@ COMPONENT SX = Single_crystal(
     xwidth = XW, yheight = YH, zdepth = ZD, delta_d_d = 0.01, mosaic = 0.01,sigma_inc=0.4,sigma_abs=2.56,barns=1,
     ax = AX, ay = AY, az = AZ, bx = BX, by = BY, bz = BZ, cx = CX,cy = CY, cz = CZ, 
     p_transmit = 0.1)
-    AT (0, 0, 0) RELATIVE splitpoint
+AT (0, 0, 0) RELATIVE splitpoint
 
 COMPONENT psd_direct_beam0 = PSD_monitor(
       xwidth=XW,yheight=YH, nx=101, ny=101, filename="psd_direct_beam0",restore_neutron=1)
@@ -580,7 +604,7 @@ GROUP det
 /*WHEN (side & 2) AT (0,0,0) RELATIVE det_017a*/
 /*GROUP det*/
 
-COMPONENT det_017 = PSD_monitor(
+COMPONENT det_017 = HDB_monitor(
         xwidth=0.256, yheight=0.256, filename=det_fn_017)
 AT(0,0,0) RELATIVE det_017a
 GROUP det
