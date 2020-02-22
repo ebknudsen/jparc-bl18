@@ -29,21 +29,22 @@
 * %P
 * INPUT PARAMETERS:
 *
-* xmin:     Lower x bound of detector opening (m)
-* xmax:     Upper x bound of detector opening (m)
-* ymin:     Lower y bound of detector opening (m)
-* ymax:     Upper y bound of detector opening (m)
-* tmin:     Lower time bound (mu-s)
-* tmax:     Upper time bound (mu-s)
-* xwidth:   Width/diameter of detector (x). Overrides xmin,xmax. (m)
-* yheight:  Height of detector (y). Overrides ymin,ymax. (m)
-* nx:       Number of pixel columns (1)
-* ny:       Number of pixel rows (1)
-* nt:       Number of TOF bins (1)
-* filename: Name of file in which to store the detector image (text)
-* restore_neutron: If set, the monitor does not influence the neutron state (1)
-* noextrafiles: If set do ot generate PSD and TOF versions of files (1)
-*
+* xmin:    [m] Lower x bound of detector opening
+* xmax:    [m] Upper x bound of detector opening
+* ymin:    [m] Lower y bound of detector opening
+* ymax:    [m] Upper y bound of detector opening
+* tmin:    [mu-s] Lower time bound
+* tmax:    [mu-s] Upper time bound
+* xwidth:  [m] Width/diameter of detector
+* yheight: [m] Height of detector
+* nx:      [ ] Number of pixel columns
+* ny:      [ ] Number of pixel rows
+* nt:      [ ] Number of TOF bins
+* filename:[text] Name of file in which to store the detector image
+* restore_neutron: [ ] If set, the monitor does not influence the neutron state
+* noextrafiles: [ ] If set do not generate PSD and TOF versions of files
+* count_time:   [s] Integration count time - for output in #neutrons
+* short_floats: [ ] use 32 bit floats to save space
 * OUTPUT PARAMETERS:
 *
 * PSD_N:    Array of neutron counts
@@ -59,7 +60,6 @@ DEFINITION PARAMETERS (count_sampling=0,short_floats=0,nx=64, ny=64, nt=1902, st
 SETTING PARAMETERS (xmin=0, xmax=0, ymin=0, ymax=0, xwidth=0, yheight=0, tmin=0, tmax=0, count_time=1)
 OUTPUT PARAMETERS (PSD_N, PSD_p, PSD_p2, PSD_Ns, PSD_ps, PSD_p2s, TOF_Ns, TOF_ps, TOF_p2s, TOT_N)
 //STATE PARAMETERS (x,y,z,vx,vy,vz,t,s1,s2,p)
-//POLARISATION PARAMETERS (sx,sy,sz)
 
 SHARE
 %{
