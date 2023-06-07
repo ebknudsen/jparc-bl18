@@ -174,7 +174,7 @@ COMPONENT src = Source_simple(
 COMPONENT psdsamp = PSD_monitor(
  xwidth = 0.0512, yheight = 0.0512,restore_neutron=1,
  nx = 128, ny = 128, filename = "PSD_samp.txt"
-) AT (0,0,34.8025) RELATIVE a1
+) AT (0,0,34.8025) RELATIVE Origin
 
 COMPONENT tofsampl = TOF_monitor(
   xwidth=0.0512, yheight=0.0512, restore_neutron=1, nt=2424, tmin=1, tmax=40000, filename="TOF_samp.txt"
@@ -197,12 +197,14 @@ ROTATED (0,omega,0) RELATIVE Origin
 EXTEND
 %{
   do {
+    /*This needs to be done since XW,YH,ZD do not have scope here.*/
     double xw,yh,zd;
     xw=nx*MC_GETPAR2(SX,xwidth);
     yh=ny*MC_GETPAR2(SX,yheight);
     zd=nz*MC_GETPAR2(SX,zdepth);
+
     crystal_miss=0;
-    int s;//,oidx;
+    int s;
     double t0,t1;
     if ( (s=box_intersect(&t0,&t1,x,y,z,vx,vy,vz,xw,yh,zd) )){
       /*miss crystal hull or already past it*/
@@ -228,44 +230,31 @@ EXTEND
       }
       /*avoid getting stuck on a boundary*/
       int count=0;
-      if(iix == ix && iiy==iy && iiz==iz){
+      while (iix == ix && iiy==iy && iiz==iz){
         /*neutron is still in the same voxel as before - move a tiny amount to enter the next one.*/ 
-        //fprintf(stderr,"I am stuck...hopping a tiny amount to try to get unstuck.\n");
-        //fprintf(stderr,"ix,iy,iz= %d %d %d nid=%ld\n",ix,iy,iz,nid);
         PROP_DT(DBL_EPSILON*10.0);
         iix = floor((x + xw*0.5)*nx/xw);
         iiy = floor((y + yh*0.5)*ny/yh);
         iiz = floor((z + zd*0.5)*nz/zd);
-        if(iix == ix && iiy==iy && iiz==iz){
-          fprintf(stderr,"I am still stuck...terminating neutron.\n");
+        count++;
+        if(count>4){
+          total_stuck_neutron_count++;
           ABSORB;
         }
       }
 
       ix=iix;iy=iiy;iz=iiz;
 
-      //SCATTER;
-
       /*inject the right hkl_info struct. The old neutron ki gets carried over to allow
        * skipping the orientation search.*/
       /*orientation index is in the 4th column of map_table. -1 since array is zero-indexed.*/
       
       oidx=Table_Index(*map_table,ix*(ny*nz)+iy*nz+iz,3)-1;
-/*      double kix_carry=MC_GETPAR(SX,hkl_info).kix;*/
-/*      double kiy_carry=MC_GETPAR(SX,hkl_info).kiy;*/
-/*      double kiz_carry=MC_GETPAR(SX,hkl_info).kiz; */
       if(oidx<1000){
           /*this only valid for single crystal voxels - not powder v's*/
           MC_GETPAR(SX,hkl_info)=(poly_hkl_info[oidx]);
       }
 
-      //printf("%d %d %d ki= %g %g %g ki_carry= %g %g %g\n",ix,iy,iz,MC_GETPAR(SX,hkl_info).kix,MC_GETPAR(SX,hkl_info).kiy,MC_GETPAR(SX,hkl_info).kiz,kix_carry, kiy_carry,kiz_carry);
-      /*if we have the same orientation as before, carry the ki over*/
-/*      if(oidx==preoidx){*/
-/*          MC_GETPAR(SX,hkl_info).kix=kix_carry;*/
-/*          MC_GETPAR(SX,hkl_info).kiy=kiy_carry;*/
-/*          MC_GETPAR(SX,hkl_info).kiz=kiz_carry;*/
-/*      }*/
       posx=(ix-nx*0.5+.5)*xw/nx;
       posy=(iy-ny*0.5+.5)*yh/ny;
       posz=(iz-nz*0.5+.5)*zd/nz;
@@ -295,14 +284,7 @@ COMPONENT SX = Single_crystal(
 WHEN (!sx_background && oidx <1000) AT (0, 0, 0) RELATIVE sx_hull
 EXTEND
 %{
-#ifdef MCSTAS_DEBUG
-  printf("I have gone through a crystal: scatter=%d, oidx=%d\n",mcScattered,oidx);
-#endif
   do {
-    if (hkl_info.type='t'){
-      //printf("COHSCATTORT: %d\n",oidx);
-    }  
-    if(SCATTERED) xtals++;
     int s;
     double t0,t1;
     if ( (s=box_intersect(&t0,&t1,x,y,z,vx,vy,vz,xwidth,yheight,zdepth) ) && t1>0 ){
@@ -322,7 +304,6 @@ WHEN (!sx_background && oidx>=1000) AT (0,0,0) RELATIVE sx_hull
 EXTEND
 %{
   do {
-    if(SCATTERED) xtals++;
     int s;
     double t0,t1;
     if ( (s=box_intersect(&t0,&t1,x,y,z,vx,vy,vz,xwidth,yheight,zdepth) ) && t1>0 ){
@@ -355,260 +336,19 @@ EXTEND
 
 COMPONENT sx_exit = Arm()
 AT(0,0,0) RELATIVE sx_hull
-EXTEND
-%{
-  //printf("exit miss: %d\n",crystal_miss);
-%}
 JUMP sx_hull WHEN (crystal_miss==0)
 
-COMPONENT psd_direct_beam0 = PSD_monitor(
-      xwidth=XW,yheight=YH, nx=101, ny=101, filename="psd_direct_beam0",restore_neutron=1)
-AT(0,0,ZD/2.0+1e-6) RELATIVE psdsamp
-GROUP g0 
+    COMPONENT fourpi = PSD_monitor_4PI(
+            radius=1, nx=201, ny=201, filename="sphere")
+    AT(0,0,0) RELATIVE splitpoint
 
-COMPONENT psd_direct_beam_arm = Arm()
-AT(0,0,0) RELATIVE PREVIOUS
-GROUP g0
-EXTEND
-%{
-    SCATTER;
-%}
-
-COMPONENT psd_anton = PSD_monitor(
-    xwidth=0.028, yheight=0.028, nx=301, ny=301,filename="psd_anton.dat",restore_neutron=1)
-AT(0,0,0.2) RELATIVE psdsamp
-GROUP g1
-
-COMPONENT psd_anton_arm = Arm()
-AT(0,0,0) RELATIVE PREVIOUS
-GROUP g1
-EXTEND
-%{
-    SCATTER;
-%}
-/******************/
-/* far field detectors. u = up, d = down */
-/****************/
-
-/*%include "detector_arms.instr"*/
-
-/* Here's the 4pi detector*/
-
-COMPONENT 4pi_psd=PSD_monitor_4PI(
-    nx=301, ny=301,radius=0.2,filename="4pi_psd", restore_neutron=1
-)
-AT (0,0,0) RELATIVE psdsamp
-
-/*COMPONENT det_014 = Monitor_nD(*/
-/*    xwidth=0.256, yheight=0.256, options="verbose list all x,y,z,vx,vy,vz,t,sx,sy,sz",*/
-/*    filename=(det_fn_014), restore_neutron=1*/
-/*)*/
-/*AT (0,0,0) RELATIVE det_014a*/
-/*GROUP det*/
-
-/*COMPONENT det_014 = HDB_monitor(*/
-/*        xwidth=0.256, yheight=0.256, filename=det_fn_014, noextrafiles=0)*/
-/*WHEN (side & 1) AT(0,0,0) RELATIVE det_014a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_015 = COPY(det_014)(filename=det_fn_015)*/
-/*WHEN (side & 1) AT (0,0,0) RELATIVE det_015a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_013 = COPY(det_014)(filename=det_fn_013)*/
-/*WHEN (side & 1) AT (0,0,0) RELATIVE det_013a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_011 = COPY(det_014)(filename=det_fn_011)*/
-/*WHEN (side & 1) AT (0,0,0) RELATIVE det_011a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_012 = COPY(det_014)(filename=det_fn_012)*/
-/*WHEN (side & 1) AT (0,0,0) RELATIVE det_012a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_010 = COPY(det_014)(filename=det_fn_010)*/
-/*WHEN (side & 1) AT (0,0,0) RELATIVE det_010a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_008 = COPY(det_014)(filename=det_fn_008)*/
-/*WHEN (side & 1) AT (0,0,0) RELATIVE det_008a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_009 = COPY(det_014)(filename=det_fn_009)*/
-/*WHEN (side & 1) AT (0,0,0) RELATIVE det_009a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_007 = COPY(det_014)(filename=det_fn_007)*/
-/*WHEN (side & 1) AT (0,0,0) RELATIVE det_007a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_005 = COPY(det_014)(filename=det_fn_005)*/
-/*WHEN (side & 1) AT (0,0,0) RELATIVE det_005a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_006 = COPY(det_014)(filename=det_fn_006)*/
-/*WHEN (side & 1) AT (0,0,0) RELATIVE det_006a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_004 = COPY(det_014)(filename=det_fn_004)*/
-/*WHEN (side & 1) AT (0,0,0) RELATIVE det_004a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_002 = COPY(det_014)(filename=det_fn_002)*/
-/*WHEN (side & 1) AT (0,0,0) RELATIVE det_002a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_003 = COPY(det_014)(filename=det_fn_003)*/
-/*WHEN (side & 1) AT (0,0,0) RELATIVE det_003a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_001 = COPY(det_014)(filename=det_fn_001)*/
-/*WHEN (side & 1) AT (0,0,0) RELATIVE det_001a*/
-/*GROUP det*/
-
-
-/* N monitors */
-
-/*COMPONENT det_017 = Monitor_nD(*/
-/*    xwidth=0.256, yheight=0.256, options="list all x,y,z,vx,vy,vz,t,sx,sy,sz",*/
-/*    filename=det_fn_017, restore_neutron=1*/
-/*)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_017a*/
-/*GROUP det*/
-
-/*COMPONENT det_017 = HDB_monitor(*/
-/*        xwidth=0.256, yheight=0.256, filename=det_fn_017, noextrafiles=0)*/
-/*WHEN (side & 2) AT(0,0,0) RELATIVE det_017a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_018 = COPY(det_017)(filename=det_fn_018)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_018a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_016 = COPY(det_017)(filename=det_fn_016)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_016a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_020 = COPY(det_017)(filename=det_fn_020)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_020a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_021 = COPY(det_017)(filename=det_fn_021)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_021a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_019 = COPY(det_017)(filename=det_fn_019)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_019a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_023 = COPY(det_017)(filename=det_fn_023)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_023a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_024 = COPY(det_017)(filename=det_fn_024)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_024a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_022 = COPY(det_017)(filename=det_fn_022)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_022a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_026 = COPY(det_017)(filename=det_fn_026)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_026a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_027 = COPY(det_017)(filename=det_fn_027)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_027a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_025 = COPY(det_017)(filename=det_fn_025)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_025a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_029 = COPY(det_017)(filename=det_fn_029)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_029a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_030 = COPY(det_017)(filename=det_fn_030)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_030a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_028 = COPY(det_017)(filename=det_fn_028)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_028a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_032 = COPY(det_017)(filename=det_fn_032)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_032a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_033 = COPY(det_017)(filename=det_fn_033)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_033a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_031 = COPY(det_017)(filename=det_fn_031)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_031a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_035 = COPY(det_017)(filename=det_fn_035)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_035a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_036 = COPY(det_017)(filename=det_fn_036)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_036a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_034 = COPY(det_017)(filename=det_fn_034)*/
-/*WHEN (side & 2) AT (0,0,0) RELATIVE det_034a*/
-/*GROUP det*/
-/**/
-/*COMPONENT det_037 = COPY(det_014)(filename=det_fn_037)*/
-/*WHEN (side & 2) AT(0,0,0) RELATIVE det_037a*/
-/*GROUP det*/
-/**/
-/*COMPONENT catch_all = Arm()*/
-/*AT(0,0,0) RELATIVE PREVIOUS*/
-/*GROUP det*/
-/*EXTEND*/
-/*%{*/
-/*  SCATTER;*/
-/*%}*/
-
-/*Anton's detector has to come after the others - there's still an implicit ABSORB for unGROUPed monitors here*/
-/*COMPONENT mon_MCP = Monitor_nD(*/
-/*    xwidth=0.028, yheight=0.028, filename="mon_MCP",options="list all x,y,z,vx,vy,vz,t,sx,sy,sz",restore_neutron=1*/
-/*)*/
-/*AT(0,0,0.02) RELATIVE psdsamp  */
-/*GROUP mcp*/
-
-COMPONENT mon_MCP = FITS_monitor(
-        xwidth=0.028, yheight=0.028, filename="mon_MCP",short_floats=1,nx=258,ny=258,nt=2424,tmin=1, tmax=40000,restore_neutron=1,
-        noextrafiles=0
-)
-WHEN (side & 4) AT(0,0,0.02) RELATIVE psdsamp
-GROUP mcp
-
-/*COMPONENT psd_anton2 = PSD_monitor(*/
-/*    xwidth=0.028, yheight=0.028, nx=301, ny=301,filename="psd_anton2.dat",restore_neutron=1)*/
-/*AT(0,0,0.2) RELATIVE psdsamp*/
-/*GROUP mcp*/
-
-COMPONENT mon_MCP_not = Monitor_nD(
-    radius=0.025, filename="mon_MCP_not", options="t bins=2424 limits=[1e-6 40000e-6]", restore_neutron=1)
-AT(0,0,0) RELATIVE psdsamp
-GROUP mcp
-
-COMPONENT mon_MCP_catchall = Arm()
-AT(0,0,0) RELATIVE PREVIOUS
-GROUP mcp
-EXTEND
-%{
-  SCATTER;
-%}
 
 
 FINALLY
 %{
+    if (total_stuck_neutron_count){
+        fprintf(stderr,"Warning(%s): The polycrystal code has terminated %d stuck neutrons.\n",mcinstrument_name,total_stuck_neutron_count);
+    }
 %}
 
 END
