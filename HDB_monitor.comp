@@ -278,12 +278,11 @@ SAVE
 
 MCDISPLAY
 %{
-  magnify("xy");
-  multiline(5, (double)xmin, (double)ymin, 0.0,
-          (double)xmax, (double)ymin, 0.0,
-               (double)xmax, (double)ymax, 0.0,
-               (double)xmin, (double)ymax, 0.0,
-               (double)xmin, (double)ymin, 0.0);
+  multiline(5, xmin, ymin, 0.0,
+      xmax, ymin, 0.0,
+      xmax, ymax, 0.0,
+      xmin, ymax, 0.0,
+      xmin, ymin, 0.0);
 %}
 
 END

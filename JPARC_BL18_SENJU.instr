@@ -151,8 +151,8 @@ COMPONENT mod = SNS_source(
 /*Old analytical model*/
 /*
 COMPONENT mod=Modr_dcHPb_flux(
-  xws=0.1, yhs=0.1, angle=0.0,
-  Emin=E_min, Emax=E_max,
+	xws=0.1, yhs=0.1, angle=0.0,
+	Emin=E_min, Emax=E_max,
   dist = 15.19,
   xw = 0.041, yh = 0.041
 ) AT (0,0,0)  RELATIVE a1
